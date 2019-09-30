@@ -1,4 +1,4 @@
 # MPC Fatigue
-Package description
+Package description (should be filled)
 ## How to run
 Instructions
