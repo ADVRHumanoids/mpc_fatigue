@@ -4,11 +4,17 @@ project(mpc_fatigue)
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++11)
 
+# add_definitions(-DPINOCCHIO_URDFDOM_TYPEDEF_SHARED_PTR)
+
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
     roscpp
+    urdf
+    controller_manager
+    joint_state_controller
+    robot_state_publisher
     )
 
 find_package(Eigen3 REQUIRED)
@@ -109,6 +115,10 @@ catkin_package(
     #  LIBRARIES tameshiwari
     #  CATKIN_DEPENDS roscpp
     #  DEPENDS system_lib
+    #  INCLUDE_DIRS include
+    #  LIBRARIES manipulator
+    #  CATKIN_DEPENDS urdf
+    #  DEPENDS system_lib
     )
 
 ###########
@@ -159,7 +169,8 @@ target_link_libraries(talker
 # Mark executable scripts (Python etc.) for installation
 # in contrast to setup.py, you can choose the destination
 install(PROGRAMS
-    python/my_python_script.py
+    #python/my_python_script.py
+     python/2_pilz_6_DOF/2_pilz_force_optimization_6DOF.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
     )
 
@@ -176,6 +187,26 @@ install(DIRECTORY include/${PROJECT_NAME}/
     FILES_MATCHING PATTERN "*.h"
     PATTERN ".svn" EXCLUDE
     )
+
+install(DIRECTORY launch/
+   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+ )
+
+install(DIRECTORY meshes/
+   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/meshes
+ )
+
+install(DIRECTORY python/
+   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/python
+ )
+
+install(DIRECTORY urdf/
+   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/urdf
+ )
+
+install(DIRECTORY talkers/
+   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/talkers
+ )
 
 ## Mark other files for installation (e.g. launch and bag files, etc.)
 # install(FILES

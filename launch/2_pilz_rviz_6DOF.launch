@@ -1,0 +1,15 @@
+<launch>
+
+    <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find mpc_fatigue)/urdf/2_pilz_robot_6DOF.urdf'"/>
+
+    <param name="robot_description_1" command="$(find xacro)/xacro --inorder '$(find mpc_fatigue)/urdf/pilz_robot_6DOF_first.urdf'"/>
+
+    <param name="robot_description_2" command="$(find xacro)/xacro --inorder '$(find mpc_fatigue)/urdf/pilz_robot_6DOF_second.urdf'"/>
+
+    <node name="rviz" pkg="rviz" type="rviz"/>
+
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="state_publisher">
+        <remap from="joint_states" to = "topic_position_from_invkin" />
+    </node>
+    
+</launch>

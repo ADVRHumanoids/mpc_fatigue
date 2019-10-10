@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "browse": {
+                "databaseFilename": "",
+                "limitSymbolsToIncludedHeaders": true
+            },
+            "includePath": [
+                "/home/user/workspace/devel/include",
+                "/opt/ros/kinetic/include",
+                "/home/user/workspace/src/mpc_fatigue/include",
+                "/home/user/workspace/src/pilz_robots/pilz_control/include",
+                "/home/user/workspace/src/pilz_robots/pilz_testutils/include",
+                "/home/user/workspace/src/pilz_robots/prbt_hardware_support/include",
+                "/home/user/workspace/src/pilz_robots/prbt_ikfast_manipulator_plugin/include",
+                "/usr/include"
+            ],
+            "name": "Linux",
+            "intelliSenseMode": "gcc-x64",
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++17"
+        }
+    ],
+    "version": 4
+}
