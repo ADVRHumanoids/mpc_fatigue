@@ -140,7 +140,8 @@ std::string generate_jacobian(std::string urdf_string, std::string body_name)
     J.setZero(6, nv);
     pinocchio::computeJointJacobians(model, data, cas_to_eig(q));
     pinocchio::framesForwardKinematics(model, data, cas_to_eig(q));
-    pinocchio::frameJacobian(model, data, cas_to_eig(q),frame_idx, J);
+    //pinocchio::frameJacobian(model, data, cas_to_eig(q),frame_idx, J);
+    pinocchio::getFrameJacobian(model, data,frame_idx, pinocchio::ReferenceFrame::LOCAL_WORLD_ALIGNED, J);
     auto Jac = eigmat_to_cas(J);
     casadi::Function JACOBIAN("jacobian", {q}, {Jac}, {"q"}, {"J"});
 
