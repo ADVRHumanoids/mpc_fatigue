@@ -19,7 +19,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 find_package(Eigen3 REQUIRED)
 
-find_package(casadi REQUIRED)
+#find_package(casadi REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -170,7 +170,7 @@ target_link_libraries(talker
 # in contrast to setup.py, you can choose the destination
 install(PROGRAMS
     #python/my_python_script.py
-     python/2_pilz_6_DOF/2_pilz_force_optimization_6DOF.py
+    #python/2_pilz_6_DOF/2_pilz_force_optimization_6DOF.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
     )
 
