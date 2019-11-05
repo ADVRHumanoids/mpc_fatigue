@@ -296,7 +296,7 @@ limitations under the License.
   <!-- ROS-Industrial 'base' frame: base_link to robot world coordinate sytem transform -->
   <link name="prbt_base"/>
   <joint name="prbt_base_link-base" type="fixed">
-    <origin rpy="0 0 0" xyz="1 0 0"/>
+    <origin rpy="0 0 0" xyz="0.7 0 0"/>
     <parent link="prbt_base"/>
     <child link="prbt_base_link"/>
   </joint>
