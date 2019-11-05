@@ -1,0 +1,4 @@
+All those scripts are referred to the 12 degrees of freedom system.
+Before running them you need to launch the ROS environment.
+
+roslaunch mpc_fatigue 2_pilz_rviz_6DOF.launch
