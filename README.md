@@ -1,4 +1,6 @@
 # MPC Fatigue
-Package description (should be filled)
+
+<h1>Folder description </h1>
+
 ## How to run
 Instructions
