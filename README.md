@@ -20,3 +20,5 @@ Copy and paste those line in your bash file:
 export PYTHONPATH=/home/user/workspace/src/mpc_fatigue/talkers/pilz_3_DOF:$PYTHONPATH
 export PYTHONPATH=/home/user/workspace/src/mpc_fatigue/talkers/pilz_6_DOF:$PYTHONPATH
 export PYTHONPATH=/home/user/workspace/src/mpc_fatigue/talkers/2_pilz_6_DOF:$PYTHONPATH
+export PYTHONPATH=/home/user/workspace/src/mpc_fatigue/talkers/Centauros:$PYTHONPATH
+export PYTHONPATH=/home/user/workspace/src/mpc_fatigue/python/Libraries:$PYTHONPATH
