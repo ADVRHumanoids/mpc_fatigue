@@ -89,7 +89,7 @@ def CompRPY(rot):
     return([Roll,Pitch,Yaw])
 
 #Save csv
-def SaveCsv(folder,qc_opt,qcd_opt,F_opt,tau_LR,tau_RR,lbt,ubt,box_pos,box_rpy):
+def SaveCsv(folder,qc_opt,qcd_opt,F_opt,tau_LR,tau_RR,lbt,ubt,box_pos,box_rpy,Tw,lbtemp,ubtemp):
 
     #Save the optimal joint angles
     with open('/home/user/workspace/src/mpc_fatigue/Centauro_solutions/' + folder + '/qc_optimal.csv', 'wb') as myfile:
@@ -99,7 +99,7 @@ def SaveCsv(folder,qc_opt,qcd_opt,F_opt,tau_LR,tau_RR,lbt,ubt,box_pos,box_rpy):
     #Save the optimal joint velocities
     with open('/home/user/workspace/src/mpc_fatigue/Centauro_solutions/' + folder + '/qcdot_optimal.csv', 'wb') as myfile:
         wr = csv.writer(myfile)
-        wr.writerow(qc_opt)
+        wr.writerow(qcd_opt)
     
     #Save the optimal force at the two end effector
     with open('/home/user/workspace/src/mpc_fatigue/Centauro_solutions/' + folder + '/F_optimal.csv', 'wb') as myfile:
@@ -129,4 +129,16 @@ def SaveCsv(folder,qc_opt,qcd_opt,F_opt,tau_LR,tau_RR,lbt,ubt,box_pos,box_rpy):
     with open('/home/user/workspace/src/mpc_fatigue/Centauro_solutions/' +folder + '/box_rpy.csv', 'wb') as myfile:
         wr = csv.writer(myfile)
         wr.writerow(box_rpy)
+
+    with open('/home/user/workspace/src/mpc_fatigue/Centauro_solutions/' + folder + '/Tw.csv', 'wb') as myfile:
+        wr = csv.writer(myfile)
+        wr.writerow(Tw)
+
+    with open('/home/user/workspace/src/mpc_fatigue/Centauro_solutions/' + folder + '/lbtemp.csv', 'wb') as myfile:
+        wr = csv.writer(myfile)
+        wr.writerow(lbtemp)
+
+    with open('/home/user/workspace/src/mpc_fatigue/Centauro_solutions/' + folder + '/ubtemp.csv', 'wb') as myfile:
+        wr = csv.writer(myfile)
+        wr.writerow(ubtemp)
 
