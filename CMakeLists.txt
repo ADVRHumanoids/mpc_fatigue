@@ -15,6 +15,10 @@ find_package(catkin REQUIRED COMPONENTS
     controller_manager
     joint_state_controller
     robot_state_publisher
+    std_msgs
+    #message_generation
+    #message_runtime
+    #mpc_fatigue
     )
 
 find_package(Eigen3 REQUIRED)
@@ -55,11 +59,10 @@ find_package(Eigen3 REQUIRED)
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+#add_message_files(
+#    FILES
+#    Array_message.msg
+#)
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -76,10 +79,11 @@ find_package(Eigen3 REQUIRED)
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs  # Or other packages containing msgs
-# )
+#generate_messages(
+#    DEPENDENCIES
+#    std_msgs  
+#    mpc_fatigue   
+#)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -119,6 +123,7 @@ catkin_package(
     #  LIBRARIES manipulator
     #  CATKIN_DEPENDS urdf
     #  DEPENDS system_lib
+    #CATKIN_DEPENDS message_runtime 
     )
 
 ###########
