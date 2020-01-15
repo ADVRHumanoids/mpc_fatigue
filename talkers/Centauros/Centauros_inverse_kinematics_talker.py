@@ -11,7 +11,7 @@ from Centauros_features import *
 def talker(q1):
     #Define publisher
     pub = rospy.Publisher('topic_position_from_invkin', JointState, queue_size=10) # This can be seen in rostopic list
-    rospy.init_node('node_position_from_invkin') #This can be seen in rosnode list
+    #rospy.init_node('node_position_from_invkin') #This can be seen in rosnode list
     hello_str = JointState()
     hello_str.header = Header()
     hello_str.header.stamp = rospy.Time.now()
