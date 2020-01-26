@@ -40,17 +40,17 @@ import rospy
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header
 import numpy as np
-from Centauros_features import *
+from Centauro_functions import *
 import matplotlib.pyplot as plt
 
 
 nq = 14
-T = 2 
+
 
 def talker(q,tau_LR = [],tau_RR = [],lbt = [],ubt = [],tgrid = [], RealTime = False):
     qsize = np.size(q)/(nq)
-    pub = rospy.Publisher('topic_position_from_invkin', JointState, queue_size=10) # This can be seen in rostopic list
-    rospy.init_node('node_position_from_invkin') #This can be seen in rosnode list
+    pub = rospy.Publisher('to_robot_topic', JointState, queue_size=10) # This can be seen in rostopic list
+    #rospy.init_node('node_position_from_invkin') #This can be seen in rosnode list
     hello_str = JointState()
     hello_str.header = Header()
     hello_str.header.stamp = rospy.Time.now()
@@ -64,7 +64,7 @@ def talker(q,tau_LR = [],tau_RR = [],lbt = [],ubt = [],tgrid = [], RealTime = Fa
         plt.clf()
         plt.ion()
     else:
-        rate = rospy.Rate(10) # 10hz
+        rate = rospy.Rate(1000) # 10hz
     
     i = 0
     while not rospy.is_shutdown():
@@ -72,35 +72,11 @@ def talker(q,tau_LR = [],tau_RR = [],lbt = [],ubt = [],tgrid = [], RealTime = Fa
             pub.publish(hello_str)
             rate.sleep()
             hello_str.header.stamp = rospy.Time.now()
-            hello_str.position = [q[0::nq][i],q[1::nq][i],q[2::nq][i],q[3::nq][i],q[4::nq][i],q[5::nq][i],q[6::nq][i],q[7::nq][i],q[8::nq][i],q[9::nq][i],q[10::nq][i],q[11::nq][i],q[12::nq][i],q[13::nq][i]]  
-
-            if RealTime == True:
-                for j in range(nq/2):
-                    plt.subplot(2,4,j+1)
-                    plt.plot(tgrid[i-2:i],tau_LR[j::nq/2][i-2:i],'-b')
-                    plt.plot(tgrid[i-2:i],tau_RR[j::nq/2][i-2:i],'-g')
-                    plt.plot(tgrid[i-2:i],lbt[j::nq][i-2:i],'--r')
-                    plt.plot(tgrid[i-2:i],ubt[j::nq][i-2:i],'--r')
-                    plt.plot(tgrid[i-2:i],lbt[j+nq/2::nq][i-2:i],'--k')
-                    plt.plot(tgrid[i-2:i],ubt[j+nq/2::nq][i-2:i],'--k')
-                    plt.xlim([0,T])
-                    plt.legend(['tau'+ str(j)+ 'LA',
-                                'tau'+ str(j)+ 'RA',
-                                'tau'+ str(j)+ 'LA LB',
-                                'tau'+ str(j)+ 'LA UB',
-                                'tau'+ str(j)+ 'RA LB',
-                                'tau'+ str(j)+ 'RA UB'
-                            ])
-                    plt.tight_layout()
-   
-                plt.pause(0.0001)
-                
+            #hello_str.position = [q[0::nq][i],q[1::nq][i],q[2::nq][i],q[3::nq][i],q[4::nq][i],q[5::nq][i],q[6::nq][i],q[7::nq][i],q[8::nq][i],q[9::nq][i],q[10::nq][i],q[11::nq][i],q[12::nq][i],q[13::nq][i]]  
+            hello_str.position = [q[0][i],q[1][i],q[2][i],q[3][i],q[4][i],q[5][i],q[6][i],q[7][i],q[8][i],q[9][i],q[10][i],q[11][i],q[12][i],q[13][i]]       
+            i += 1
         else:
-            if RealTime == True:
-                plt.ioff()
-                plt.show()
             break
-        i += 1
         
 
 if __name__ == '__main__':
