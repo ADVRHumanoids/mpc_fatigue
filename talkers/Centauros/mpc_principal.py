@@ -32,7 +32,7 @@ import time
 #Define the node name
 rospy.init_node('OCPsolver_node') #, anonymous=True)
 #Define at which frequency the publisher will publish to the unroller node
-rate = rospy.Rate(100) # 100hz
+rate = rospy.Rate(1000) # 100hz
 
 
 #####################################################
@@ -121,7 +121,7 @@ T_0 = np.full((1,nq),20.0)[0].tolist()
 
 #Create the publisher that will send the OPTIMAL TRAJECTORY to the unroller node
 #pub = rospy.Publisher('to_unroller_topic', String , queue_size=10)
-pub = rospy.Publisher('to_unroller_topic', Float32MultiArray , queue_size=100)
+pub = rospy.Publisher('to_unroller_topic', Float32MultiArray , queue_size=10000)
 
 
 #INITIAL CONDITION FOR THE FIRST WARMSTART
@@ -134,11 +134,12 @@ sol0 = sol0 * N + qc_0 + T_0
 #####################################################
 
 s = 0 #Step numero uno senza IPOPT
+ciclo = 0
 nf = 3 # force components
 n = 3*nq + 2*nf # element solution of each step  
-while True:
-
-    print("Solving OCP ...")
+while s < 3:
+    
+    print("Solving OCP " + str(s) + " ...")
     #   EMPTY NLP 
     w = []
     lbw = []
@@ -412,11 +413,9 @@ while True:
     if s >= 1:
         r = Solver(x0 = sol, lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg)  
     else:
-        r = Solver(x0 = sol0,lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg) 
+        r = Solver(x0 = sol0, lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg) 
 
     sol = r['x'].full().flatten()
-    #Update s in order to change Solver and options
-    s = s + 1
 
     #Initial condition for the next OCP
     qc_0 = sol[N*n:N*n+nq]
@@ -444,18 +443,26 @@ while True:
 
     #Extract the optimal joint trajectory to send to the enroller
     opt_sol = [] 
-    k = 0
-    while (k < N+1):
+    
+    #Dalla seconda iterazione non mandare la condizione finale
+    if ciclo == 0:
+        j = 0
+        ciclo += 1
+    else:
+        j = 1
+        
+    while (j < N+1):
         opt_sol.append(sol[k*n:k*n+nq])
-        k += 1 
+        j += 1 
         
     
     data_to_send = Float32MultiArray()
-    counter = 0
     while opt_sol:
         data_to_send.data = opt_sol.pop(0)
         pub.publish(data_to_send)
     
     print("OCP has been solved, send trajectory to the unroller ...")
-   
+    time.sleep(5)
+    #Upgrade s to let the warmstarting start and the new OCP
+    s = s + 1
        
