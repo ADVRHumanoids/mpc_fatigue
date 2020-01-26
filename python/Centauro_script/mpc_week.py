@@ -87,24 +87,27 @@ lbtorque = -Centauro_features.joint_torque_lim # [N/m]
 ubtorque = Centauro_features.joint_torque_lim # [N/m]
 #Temperature bounds
 lbtemp = np.full((1,nq),0.0)[0].tolist()
-ubtemp = np.full((1,nq),mpc.temperature_bound)[0].tolist()
+ubtemp = np.full((1,nq),80.0)[0].tolist()
 
 # COMPUTE INITIAL RELATIVE POSITION AND RELATIVE ERROR
 
 #Left End effector wrt right end effector
-RelativePosition_0 = InitialRelativePosition(qc_0)
-RelativeOrientation_0 = InitialRelativeOrientationError(qc_0)
+RelativePosition_0 = RelativePosition(qc_0)
+RelativeOrientation_0 = RelativeOrientationError(qc_0)
 
 #Initialilize the relative position list
 RelPosition = [RelativePosition_0]
 
-#Compute the initial torques
-WA0 = np.array([0,0,m*9.81/2,0,0,0]).reshape(6,1)
-
-tau0 = InvDyn(qc_0,qc_dot0,qc_ddot0) + vertcat(mtimes(Jac_LA(qc_0).T,WA0),mtimes(Jac_RA(qc_0).T,WA0))
+##Compute the initial torques
+#WA0 = np.array([0,0,m*9.81/2,0,0,0]).reshape(6,1)
+#
+#tau0 = InvDyn(qc_0,qc_dot0,qc_ddot0) + vertcat(mtimes(Jac_LA(qc_0).T,WA0),mtimes(Jac_RA(qc_0).T,WA0))
+#print(tau0)
 #From the initial torques get the current
-T_0 = np.full((1,nq),20.0)[0].tolist()
+T_0 = np.full((1,nq),20.0)[0].tolist() 
 
+BoxPos = mpc.box_initial_position
+L = mpc.Lbox
 #####################################################
 #               TOPIC INITIALIZATION                #
 #####################################################
@@ -153,7 +156,7 @@ while True:
     J = 0
 
     #Box weight
-    Fdes = SX([0,0, 9.81 * m])
+    Fdes = SX(9.81 * m)
     
 
     print('')
@@ -203,7 +206,7 @@ while True:
 
         # Gravitational force application point
         pbox = (pL + pR)/2
-                    
+              
         #Force that the left end effector exerts to the object
         moment_component = SX.zeros(3)
         F_name = 'FLR'+ str(k)
@@ -224,9 +227,14 @@ while True:
         ###################################################  
         ##                 CONSTRAINTS                   ##   
         ###################################################
-        
+
+        #The two end effectors move along a line
+        g.append(vertcat(pL[1] - (BoxPos[1] + L/2), pL[2] - BoxPos[2]))
+        lbg += np.zeros(2).tolist()  
+        ubg += np.zeros(2).tolist()
+
         #Force static equilibrium
-        g.append(vertcat( F_LR + F_RR - Fdes))
+        g.append(vertcat( F_LR[2] + F_RR[2] - Fdes, F_LR[0] + F_RR[0], F_LR[1] + F_RR[1]))
         lbg += np.zeros(3).tolist()  
         ubg += np.zeros(3).tolist()
         
@@ -245,7 +253,7 @@ while True:
         ubg += np.zeros(3).tolist()
         RelPosition.append(pos_1in2)
             
-        #### RELATIVE ORIENTATION ####
+        #### RELATIVE ORIENTATION BETWEEN END EFFECTORS ####
         R_o = mtimes(R01,R02.T)
         #Compute the skew metrix of R_o
         R_skew = (R_o - R_o.T)/2
@@ -258,11 +266,13 @@ while True:
         g.append(reshape(e_k,(3,1)) - RelativeOrientation_0)
         lbg += np.zeros(3).tolist()  
         ubg += np.zeros(3).tolist()
-                
-        #I have defined the force that the robot exerts on the ambient.
-        #The force that the ambient exerts on the robot is equal with a minus sign
-        #You need to take care of that while computing the inverse dynamics
 
+        Rref = np.matrix("0 0 -1; 0 1 0 ; 1 0 0")
+        gg = dot(R01 - Rref, R01 - Rref)
+        g.append(gg)
+        lbg += np.zeros(1).tolist()  
+        ubg += np.zeros(1).tolist()
+       
         #Compute torque at each step
         JLA = Centauro_features.jac_la(qc_k)
         JRA = Centauro_features.jac_ra(qc_k)
@@ -274,7 +284,7 @@ while True:
         lbtq.append(lbtorque)
         ubtq.append(ubtorque)
                 
-           
+        #Tref = np.full((1,nq),50.0)[0].tolist()      
         ###################################################   
         ##                 COST FUNCTION                 ##   
         ###################################################
@@ -282,8 +292,7 @@ while True:
         J += 100*dot(qcd_k,qcd_k)
         J += 10*dot(F_LR,F_LR)
         J += 10*dot(F_RR,F_RR)
-        
-        
+        #J += dot(T_k - Tref, T_k - Tref)
         ###################################################   
         ##                 NEW VARIABLES                 ##   
         ###################################################
@@ -291,7 +300,6 @@ while True:
         #Integration
         q_next = qc_k + qcd_k * h
         #Integrate temperature
-        
         
         Ia = tau/ktau
         Pj = (Ia**2) * Ra
@@ -314,7 +322,6 @@ while True:
         ubw += ubtemp
         lbTe.append(lbtemp)
         ubTe.append(ubtemp)
-    
     
         #Continuity constraint
         g.append(q_next - qc_k)
@@ -346,9 +353,9 @@ while True:
     nlp = dict(f = J, g = g, x = w)
 
     if s >= 1:
-        opts = {"ipopt": {"print_level" : 3 ,"warm_start_init_point": "yes","tol": 0.001,"acceptable_tol": 0.001,"constr_viol_tol" : 0.001, "compl_inf_tol": 0.001}}
+        opts = {"ipopt": {"tol": 0.001,"acceptable_tol": 0.001,"constr_viol_tol" : 0.001, "compl_inf_tol": 0.001}}
     else:
-        opts = {"ipopt": {"print_level" : 3 ,"warm_start_init_point": "yes","tol": 0.001,"acceptable_tol": 0.001,"constr_viol_tol" : 0.001, "compl_inf_tol": 0.001}}
+        opts = {"ipopt": {"warm_start_init_point": "yes","tol": 0.001,"acceptable_tol": 0.001,"constr_viol_tol" : 0.001, "compl_inf_tol": 0.001}}
 
 
     # Allocate a solver
@@ -357,8 +364,10 @@ while True:
     if s >= 1:
         r = Solver(x0 = sol, lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg)  
     else:
-        r = Solver(x0 = sol0, lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg) 
-
+        r = Solver(lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg) 
+        
+#    Solver = nlpsol("solver", "sqpmethod", nlp)#, opts)
+#    r = Solver(x0 = sol0 ,lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg) 
     sol = r['x'].full().flatten()
 
     #Initial condition for the next OCP
@@ -380,15 +389,20 @@ while True:
     print("#####################################")
     print("#   Estimated joint temperatures    #")
     print("#####################################")
+    print("")
     print(T_0)
+    print("")
     print("#####################################")
     print("#   End effector relative position  #")
     print("#####################################")
-    print(RelativePosition_0) 
+    print("")
+    print(RelativePosition_0)
+    print("") 
     print("#####################################")
     print("# End effector relative orientation #")
     print("#####################################")
     print(RelativeOrientation_0)
+    print("")
     
     data_to_send = Float32MultiArray()
     j = 0
@@ -404,7 +418,7 @@ while True:
         F_tot_opt_local = [ mtimes(HfromWtoL,WrenchL_global)[0:3] ]
         
         #Transform FR  in LOCAL FORCE
-        RfromWtoR = np.array(ForwKinRA(sol[j*n:j*n+nq],"rot").T)
+        RfromWtoR = np.array(ForwKinLA(sol[j*n:j*n+nq],"rot").T)
         HfromWtoR = vertcat(horzcat(RfromWtoR,np.zeros([3,3])),horzcat(np.zeros([3,3]),RfromWtoR))
         F_tot_opt_local.append( mtimes(HfromWtoL,WrenchL_global)[0:3])
         
