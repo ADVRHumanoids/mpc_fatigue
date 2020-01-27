@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Nov 22 14:20:52 2019
+
+@author: user
+"""
+
 """
 Created by Pasquale Buonocore 30/10/2019 @IIT
 
@@ -15,23 +22,27 @@ roslaunch mpc_fatigue 2_pilz_rviz_6DOF.launch
 import mpc_fatigue.pynocchio_casadi as pin
 import Centauros_inverse_kinematics_talker as ti
 import Centauro_dynamics_talker as ta
+import TemperatureModel as TempModel
 from Centauro_Inverse_Kinematic import *
 from Centauros_features import *
 from casadi import *
 import numpy as np
 import rospy
 import csv
-
+import time
+import matplotlib.pyplot as plt
 ###############################################################################
 #--------------------------What do you want to do? ---------------------------#
 ###############################################################################
+
 
 class Check:
    OCP = True
    Rviz = True
    
-   Const1 = False
-   Const2 = True
+   Const1 = True
+   Const2 = False
+   
    Const3 = False
    Const4 = False
    
@@ -50,14 +61,16 @@ folder = "CsvSolution/"
 
 # Define string constraint 
 
-Sl = [1,1,1,0,0,0,0] # 0,1
+Sl = [1,1,1,0,0,0,0]
 Cl = [0.,0.,0.,0.,0.,0.,0.]
 
-Sr = [0,0,0,0,0,0,0] # 1 , 0 ...
+Sr = [0,0,0,0,0,0,0]
 Cr = [0.,0.,0.,0.,0.,0.,0.]
 
 S = Sl + Sr
 C = Cl + Cr
+
+ktau = 40
 
 ###############################################################################
 #                               Initialization                                #
@@ -67,15 +80,12 @@ print('### Inverse kinematic solution ###')
 print("")
 
 #Set box initial positions
-Box_pos = np.array([0.9, 0.0 , 1.3])
-
+Box_ini = np.array([0.9, 0.0 , 1.3])
 #Set box length
 Lbox = 0.4
 #Solve inverse kinematics and plot the solution in Rviz
-qc_0 = InvKin(Box_pos,Lbox)
-#I can compute the R init, which is actually the desired one in the const function
+qc_0 = InvKin(Box_ini,Lbox)
 Rdes = ForwKinLA(qc_0,'rot')
-
 #Check initial condition
 print("####### Checking initial condition ###### ")
 print("")
@@ -91,11 +101,18 @@ T = 2.
 N = 50
 h = T/N
 
+
 # Define a certain time grid
 tgrid = [T/N*k for k in range(N)]
 
 #System degree of freedom
 nq = 14
+
+# Mass to lift up
+m = 10 # [ Kg ]
+
+#Tollerance
+toll = 0.001 # [N] on [Nm]
 
 #Same zero acceleration and velocity for both arms at step 0
 qc_dot0 = np.zeros(nq).tolist() # Joint acceleration
@@ -121,12 +138,15 @@ RelativeOrientation_0 = InitialRelativeOrientationError(qc_0)
 #Initialilize the relative position list
 RelPosition = [RelativePosition_0]
 
-# Mass to lift up
-m = 10 # [ Kg ]
 
-#Tollerance
-toll = 0.001 # [N] on [Nm]
+#Compute the initial torques
+WA0 = np.array([0,0,m*9.81/2,0,0,0]).reshape(6,1)
+tau0 = InvDyn(qc_0,qc_dot0,qc_ddot0) + vertcat(mtimes(Jac_LA(qc_0).T,WA0),mtimes(Jac_RA(qc_0).T,WA0))
+#From the initial torques get the current
+Ic = np.round(tau0/ktau,4)
 
+T_0 = np.full((1,nq),20.0)[0].tolist() 
+                
 if Check.OCP == True:
     print('')
     print('############## Optimal control problem ############## ')
@@ -148,22 +168,24 @@ if Check.OCP == True:
     #Cost function
     J = 0
 
-    
     #Box weight
     Fdes = SX(9.81 * m)
-    
-    
-    #FILL THE NLP IN
 
     # nq states each arm
     qc_k = SX.sym('qc0', nq)
     w.append(qc_k)
-    lbw +=  [qc_0] # .tolist()
-    ubw +=  [qc_0] # .tolist() 
-    
+    lbw +=  [qc_0] 
+    ubw +=  [qc_0] 
     
     for k in range(N):
-            
+        
+        R01 = ForwKinLA(qc_k,'rot')
+        R02 = ForwKinRA(qc_k,'rot')
+        pL = ForwKinLA(qc_k,'pos')
+        pR = ForwKinRA(qc_k,'pos')
+        JLA = Jac_LA(qc_k)
+        JRA = Jac_RA(qc_k)
+        
         ###################################################   
         #                    CONTROLS                     #   
         ###################################################
@@ -183,13 +205,9 @@ if Check.OCP == True:
         ###################################################   
         #    NEW POSITION, FORCE AND APPLICATION POINT    #   
         ###################################################
-        
-        # Define E1 and E2 position at each step
-        E1 = ForwKinLA(qc_k,'pos')
-        E2 = ForwKinRA(qc_k,'pos')
-        
+
         # Gravitational force application point
-        pbox = (E1 + E2)/2
+        pbox = (pL + pR)/2
                  
         #Force that the left end effector exerts to the object
         moment_component = SX.zeros(3)
@@ -218,39 +236,34 @@ if Check.OCP == True:
         ubg +=  np.full((1,3),toll)[0].tolist() 
         
         #Moment static equilibrium
-        g.append(vertcat(cross(E1 - E2,F_LR) + cross(E2 - E1,F_RR)))
+        g.append(vertcat(cross(pL - pR,F_LR) + cross(pR - pL,F_RR)))
         lbg +=  np.full((1,3),-toll)[0].tolist() 
         ubg +=  np.full((1,3),toll)[0].tolist() 
     
         # RELATIVE POSE CONSTRAINT
         if Check.Const1 == True or Check.Const3 == True or Check.Const4 == True : 
             
-            pos1 = ForwKinLA(qc_k,'pos')
-            rot1 = ForwKinLA(qc_k,'rot')
-            pos1 = vertcat(pos1,SX(1.0))
-            
-            #E2 effector    
-            pos2 = ForwKinRA(qc_k,'pos')
-            rot2 = ForwKinRA(qc_k,'rot' )
+            #pos1 = vertcat(pos1,SX(1.0))
             
             if Check.Const1 == True or Check.Const3 == True:
                 #### RELATIVE POSITION ####
-                mat_inv = vertcat(horzcat(rot2.T,-mtimes(rot2.T,pos2)),SX([0.0,0.0,0.0,1.0]).T)
-                #Compute the relative position of the E1 in E2
-                pos_1in2 = mtimes(mat_inv,pos1)
+#                    mat_inv = vertcat(horzcat(rot2.T,-mtimes(rot2.T,pos2)),SX([0.0,0.0,0.0,1.0]).T)
+#                    #Compute the relative position of the E1 in E2
+#                    pos_1in2 = mtimes(mat_inv,pos1)
+                pos_1in2 = mtimes(R01.T,pR) - mtimes(R01.T,pL)
                 
                 #Add the constraint - The relative position should be the same
-                g.append(pos_1in2[0:3] - RelPosition[k][0:3])
-                lbg += np.zeros(3).tolist()  
-                ubg += np.zeros(3).tolist()
-#                lbg += np.full((1,3),-0.001)[0].tolist()
-#                ubg += np.full((1,3),0.001)[0].tolist()
-                
+                g.append(pos_1in2[0:3] - RelPosition[k][0:3]) 
+                #g.append(dot(pos_1in2[0:3] - RelPosition[k][0:3],pos_1in2[0:3] - RelPosition[k][0:3]))
+#                    lbg += np.zeros(3).tolist()  
+#                    ubg += np.zeros(3).tolist()
+                lbg +=  np.full((1,3),0.0)[0].tolist() 
+                ubg +=  np.full((1,3),0.0001)[0].tolist() 
                 RelPosition.append(pos_1in2)
             
             if Check.Const1 == True or Check.Const4 == True:
                 #### RELATIVE ORIENTATION ####
-                R_o = mtimes(rot1,rot2.T)
+                R_o = mtimes(R01,R02.T)
                 #Compute the skew metrix of R_o
                 R_skew = (R_o - R_o.T)/2
                 #Extract errors
@@ -262,44 +275,30 @@ if Check.OCP == True:
                 g.append(reshape(e_k,(3,1)) - RelativeOrientation_0)
                 lbg += np.zeros(3).tolist()  
                 ubg += np.zeros(3).tolist()
-#                lbg += np.full((1,3),-0.001)[0].tolist()
-#                ubg += np.full((1,3),0.001)[0].tolist()
+#                    lbg +=  np.full((1,3),0.0)[0].tolist() 
+#                    ubg +=  np.full((1,3),0.0001)[0].tolist()  
 
         # RELATIVE TWIST CONSTRAINT
         if Check.Const2 == True or Check.Const3 == True or Check.Const4 == True:
             
-            # 6 relative velocity constraints
-            JLA = Jac_LA(qc_k)
-            JRA = Jac_RA(qc_k)
-            
-            # 3 relative position constraints
-            pos1 = ForwKinLA(qc_k,'pos')
-            rot1 = ForwKinLA(qc_k,'rot')
-            
-            #E2 effector    
-            pos2 = ForwKinRA(qc_k,'pos')
-            rot2 = ForwKinRA(qc_k,'rot' )
-            pos2 = vertcat(pos2,SX(1.0))
-            
-            mat_inv = vertcat(horzcat(rot1.T,-mtimes(rot1.T,pos1)),SX([0.0,0.0,0.0,1.0]).T)
-            #Compute the relative position of the E1 in E2
-            p = mtimes(mat_inv,pos2)
+            #Compute pos 2 in 1
+            p = mtimes(R01.T,pR) - mtimes(R01.T,pL)
             #From pos 2 in 1 I can compute the skew matrix
             I = np.array([1,0,0,0,1,0,0,0,1]).reshape(3,3)
-            Sp2in1 = np.array([0, -p[2], p[1],p[2],0,-p[0],-p[1], p[0],0]).reshape(3,3)
-            r0E1 = rot1.T
             zerome = np.zeros(9).reshape(3,3)
+            
+            Sp2in1 = np.array([0, -p[2], p[1],p[2],0,-p[0],-p[1], p[0],0]).reshape(3,3)
             
             #IMPORTANT PSI MATRIX
             psi = vertcat(horzcat(I, - Sp2in1), horzcat(zerome, I))
             
             #IMPORTANT ROTATION MATRIX
-            omega = vertcat(horzcat(r0E1, zerome), horzcat(zerome, r0E1))
+            omega = vertcat(horzcat(R01.T, zerome), horzcat(zerome, R01.T))
             
             partA = mtimes(mtimes(-psi,omega),JLA)
             partB = mtimes(omega,JRA)
-#            partA = mtimes(-psi,JLA)
-#            partB = JRA
+            
+            
             Jr = horzcat(partA , partB)
             
             if Check.Const2 == True:
@@ -340,49 +339,26 @@ if Check.OCP == True:
                     ubg += [C[i]]
                     lbt.append(- C[i])
                     ubt.append(C[i])
-                
             else:
                 g.append(tau[i])
                 lbg += [lbtorque[i]]
                 ubg += [ubtorque[i]]
                 lbt.append(lbtorque[i])
                 ubt.append(ubtorque[i])
-         
-         
-         #### RELATIVE ORIENTATION ####
-        R1 = ForwKinLA(qc_k,'rot')
-        R_or = mtimes(R1,Rdes.T)
-        #Compute the skew metrix of R_o
-        R_skew = (R_or - R_or.T)/2
-        #Extract errors
-        exk = R_skew[2,1]
-        eyk = R_skew[2,0]
-        ezk = R_skew[1,0]
-        e_kkL = np.array([exk,eyk,ezk])
-        
-        R2 = ForwKinLA(qc_k,'rot')
-        R_or = mtimes(R2,Rdes.T)
-        #Compute the skew metrix of R_o
-        R_skew = (R_or - R_or.T)/2
-        #Extract errors
-        exk = R_skew[2,1]
-        eyk = R_skew[2,0]
-        ezk = R_skew[1,0]
-        e_kkR = np.array([exk,eyk,ezk])
+    
         ###################################################   
         ##                 COST FUNCTION                 ##   
         ###################################################
-        J += 100*dot(pbox - Box_pos , pbox - Box_pos)
-        #J += 100*dot(e_kkL , e_kkL)
-        #J += 10*dot(e_kkR , e_kkR)
+        J += 100*dot(pbox - Box_ini , pbox - Box_ini)
         J += mtimes(qcd_k.T,qcd_k)
-        
         ###################################################   
         ##                 NEW VARIABLES                 ##   
         ###################################################
         
         #Integration
         q_next = qc_k + qcd_k * h
+        #Integrate temperature
+        #Tw.append(  np.e**(-T/N/Ttheta) * Tw[i] + Ploss * Rtheta * (1 - np.e**(-T/N/Ttheta)) )
         
         #New local state
         qname = 'qc' + str(k+1)
@@ -420,89 +396,93 @@ if Check.OCP == True:
         
     sol = r['x'].full().flatten()
     
+    
+    
     with open('/home/user/workspace/src/mpc_fatigue/Centauro_solutions/' + folder + '/solution.csv', 'wb') as myfile:
         wr = csv.writer(myfile)
         wr.writerow(sol)
+            
+            
+            
+                ###################################################   
+                #       EXTRACT VARIABLES AND SAVE CSV FILE       #   
+                ###################################################
+    if Check.OCP == True or Check.Rviz == True:
         
-        
-            ###################################################   
-            #       EXTRACT VARIABLES AND SAVE CSV FILE       #   
-            ###################################################
-if Check.OCP == True or Check.Rviz == True:
-    
-    print('')
-    print('############## Creating csv file ############## ')
-    
-    sol = []
-    
-    with open('/home/user/workspace/src/mpc_fatigue/Centauro_solutions/' + folder + '/solution.csv', 'rb') as solution:
-        for line in solution:
-            x = line.split(',')
-            for val in x:
-                sol.append(float(val))
-                
-    nf = 3 # force component
-    nq = 14
-    n = 2*nq + 2*nf # element solution of each step
-    
-    #Empty lists
-    qc_opt = []
-    qcd_opt = []
-    F_opt = []
-    tau_LR = []
-    tau_RR = []
-
-    #Variables from the solution
-    k = 0
-    while (k < N):
-        qc_opt.append(sol[k*n:k*n+nq])
-        qcd_opt.append(sol[k*n+nq:k*n+2*nq])
-        F_opt.append(sol[k*n+2*nq:k*n+n])
-        J_LA = Jac_LA(qc_opt[k])
-        J_RA = Jac_RA(qc_opt[k])
-        W_LA = vertcat(sol[k*n+2*nq:k*n+n][0:nf],np.zeros(3).tolist())
-        W_RA = vertcat(sol[k*n+2*nq:k*n+n][nf:2*nf],np.zeros(3).tolist())
-        Inv_dyn = InvDyn(qc_opt[k], qcd_opt[k], qc_ddot0) + vertcat(mtimes(J_LA.T,W_LA), mtimes(J_RA.T,W_RA))
-        tau_LR.append(Inv_dyn[0:7])
-        tau_RR.append(Inv_dyn[7:14])
-        k+= 1
-    
-    #Box position and orientation
-    k = 0
-    box_pos = []
-    box_rpy = []
-    while k < N :
-        E1 = ForwKinLA(sol[k*n:k*n+nq],'pos')
-        E2 = ForwKinRA(sol[k*n:k*n+nq],'pos')
-        R1 = ForwKinLA(sol[k*n:k*n+nq],'rot')
-        
-        Roll = np.arctan2(R1[2,0],R1[2,1])
-        Pitch = np.arccos( -R1[2,2])
-        Yaw = - np.arctan2(R1[0,2],R1[1,2])
-        
-        box_rpy.append([Roll,Pitch,Yaw])
-        box_pos.append(np.round((E1 + E2)/2,3))
-        k = k + 1
-        
-     
-    #Make a unique list
-    qc_opt = np.concatenate(qc_opt).tolist()
-    qcd_opt = np.concatenate(qcd_opt).tolist()
-    F_opt = np.concatenate(F_opt).tolist()
-    tau_LR = np.concatenate(np.concatenate(tau_LR).tolist())
-    tau_RR = np.concatenate(np.concatenate(tau_RR).tolist())
-    box_pos = np.concatenate(np.concatenate(box_pos))
-    box_rpy = np.concatenate(box_rpy)
-
-    if Check.Rviz == True:
-                
         print('')
-        print('############## Rviz simulation ############## ')
-    
-        ta.talker(qc_opt)  
+        print('############## Creating csv file ############## ')
         
-    #Save the csv file
-    SaveCsv(folder,qc_opt,qcd_opt,F_opt,tau_LR,tau_RR,lbt,ubt,box_pos,box_rpy)
+        sol = []
+        
+        with open('/home/user/workspace/src/mpc_fatigue/Centauro_solutions/' + folder + '/solution.csv', 'rb') as solution:
+            for line in solution:
+                x = line.split(',')
+                for val in x:
+                    sol.append(float(val))
+
+           
+        nf = 3 # force component
+        nq = 14
+        n = 2*nq + 2*nf # element solution of each step        
+    
+        #Empty lists
+        qc_opt = []
+        qcd_opt = []
+        F_opt = []
+        tau_LR = []
+        tau_RR = []
+    
+        #Variables from the solution
+        k = 0
+        while (k < N):
+            qc_opt.append(sol[k*n:k*n+nq])
+            qcd_opt.append(sol[k*n+nq:k*n+2*nq])
+            F_opt.append(sol[k*n+2*nq:k*n+n])
+            J_LA = Jac_LA(qc_opt[k])
+            J_RA = Jac_RA(qc_opt[k])
+            W_LA = vertcat(sol[k*n+2*nq:k*n+n][0:nf],np.zeros(3).tolist())
+            W_RA = vertcat(sol[k*n+2*nq:k*n+n][nf:2*nf],np.zeros(3).tolist())
+            Inv_dyn = InvDyn(qc_opt[k], qcd_opt[k], qc_ddot0) + vertcat(mtimes(J_LA.T,W_LA), mtimes(J_RA.T,W_RA))
+            tau_LR.append(Inv_dyn[0:7])
+            tau_RR.append(Inv_dyn[7:14])
+            k+= 1
+        
+        #Box position and orientation
+        k = 0
+        box_pos = []
+        box_rpy = []
+        while k < N :
+            E1 = ForwKinLA(sol[k*n:k*n+nq],'pos')
+            E2 = ForwKinRA(sol[k*n:k*n+nq],'pos')
+            R1 = ForwKinLA(sol[k*n:k*n+nq],'rot')
+            
+            Roll = np.arctan2(R1[2,0],R1[2,1])
+            Pitch = np.arccos( -R1[2,2])
+            Yaw = - np.arctan2(R1[0,2],R1[1,2])
+            
+            box_rpy.append([Roll,Pitch,Yaw])
+            box_pos.append(np.round((E1 + E2)/2,3))
+            k = k + 1
+            
+         
+        #Make a unique list
+        qc_opt = np.concatenate(qc_opt).tolist()
+        qcd_opt = np.concatenate(qcd_opt).tolist()
+        F_opt = np.concatenate(F_opt).tolist()
+        tau_LR = np.concatenate(np.concatenate(tau_LR).tolist())
+        tau_RR = np.concatenate(np.concatenate(tau_RR).tolist())
+        box_pos = np.concatenate(np.concatenate(box_pos))
+        box_rpy = np.concatenate(box_rpy)
+    
+        if Check.Rviz == True:
+                    
+            print('')
+            print('############## Rviz simulation ############## ')
+        
+            ta.talker(qc_opt)  
+            
+        #Save the csv file
+        SaveCsv(folder,qc_opt,qcd_opt,F_opt,tau_LR,tau_RR,lbt,ubt,box_pos,box_rpy)
 
 print('Done')    
 

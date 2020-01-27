@@ -76,8 +76,8 @@ def CheckInitialCondition(qc_0):
 
 def InitialRelativePosition(qc_0):
     #E1 effector
-    pos1= ForwKinLA(qc_0,'pos')
-    rot1= ForwKinLA(qc_0,'rot')
+    pos1 = ForwKinLA(qc_0,'pos')
+    rot1 = ForwKinLA(qc_0,'rot')
     pos1 = np.array(pos1).reshape(3,1)
     pos1 = np.append(pos1,1.0).reshape(4,1)
 
@@ -88,12 +88,13 @@ def InitialRelativePosition(qc_0):
     pos2 = np.array(pos2).reshape(3,1)
     rot2 = np.array(rot2).reshape(3,3)
 
-
     mat_inv = np.vstack([np.hstack([rot2.T,-mtimes(rot2.T,pos2)]),
                         np.array([0,0,0,1]).reshape(1,4)])
-                        
-                        
-    pos_1in2 = mtimes(mat_inv,pos1)
+
+    pR = ForwKinRA(qc_0,'pos')
+    pL = ForwKinLA(qc_0,'pos')                      
+    pos_1in2 = mtimes(rot1.T,pR) - mtimes(rot1.T,pL)
+    #pos_1in2 = np.round(mtimes(mat_inv,pos1),1)
     return(pos_1in2)
 
 
@@ -105,9 +106,10 @@ def InitialRelativeOrientationError(qc_0):
     #Compute the skew metrix of R_o
     R_skew = (R_o - R_o.T)/2
 
-    ex = np.round(R_skew[2,1],3)[0][0]
-    ey = np.round(R_skew[2,0],3)[0][0]
-    ez = np.round(R_skew[1,0],3)[0][0]
-
-    e_des = np.array([ex,ey,ez]).reshape(3,1)
+    #ex = np.round(R_skew[2,1],3)[0][0]
+    #ey = np.round(R_skew[2,0],3)[0][0]
+    #ez = np.round(R_skew[1,0],3)[0][0]
+    #e_des = np.round(np.array([ex,ey,ez]).reshape(3,1),1)
+    e_des = np.array([R_skew[2,1],R_skew[2,0],R_skew[1,0]])
+    
     return(e_des)
