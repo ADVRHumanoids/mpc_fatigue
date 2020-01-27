@@ -6,7 +6,7 @@ from casadi import *
 
 #The power loss of the brushless motor can be obtained:
 
-Ra = 10. # [Ohm]
+Ra = 10. # [1Ohm]
 Rh = 2. #[Ohm]
 
 # Ia is the actual current
@@ -29,7 +29,8 @@ Ctheta = 15. # [F]
 #If we ignore Rtheta0 and define
 Rtheta = (Rtheta1*Rtheta2)/(Rtheta1+Rtheta2)
 Ttheta = Rtheta * Ctheta
-ktau = SX([40.0,40.0,40.0,40.0,40.0,30.0,50.0,40.0,30.0,40.0,40.0,40.0,45.0,50.0])
+ktau = SX([30.0,40.0,40.0,40.0,40.0,30.0,50.0,30.0,30.0,40.0,40.0,40.0,40.0,50.0])
+# ktau = SX([40.0,40.0,40.0,40.0,40.0,40.0,50.0,40.0,30.0,40.0,40.0,40.0,40.0,50.0]) Funzionante
 
 def CompPloss(tau,qdot):
     # First component is due to Joule effect

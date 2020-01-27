@@ -53,7 +53,6 @@ print("#   Checking initial condition   #")
 print("##################################")
 print("")
 CheckInitialCondition(qc_0)
-
 #####################################################
 #               OCP  INITIALIZATION                 #
 #####################################################
@@ -99,10 +98,10 @@ RelativeOrientation_0 = RelativeOrientationError(qc_0)
 RelPosition = [RelativePosition_0]
 
 ##Compute the initial torques
-#WA0 = np.array([0,0,m*9.81/2,0,0,0]).reshape(6,1)
-#
-#tau0 = InvDyn(qc_0,qc_dot0,qc_ddot0) + vertcat(mtimes(Jac_LA(qc_0).T,WA0),mtimes(Jac_RA(qc_0).T,WA0))
-#print(tau0)
+WA0 = np.array([0,0,m*9.81/2,0,0,0]).reshape(6,1)
+
+tau0 = InvDyn(qc_0,qc_dot0,qc_ddot0) + vertcat(mtimes(Jac_LA(qc_0).T,WA0),mtimes(Jac_RA(qc_0).T,WA0))
+print(tau0)
 #From the initial torques get the current
 T_0 = np.full((1,nq),20.0)[0].tolist() 
 
@@ -325,8 +324,8 @@ while s < 20:
         ###################################################   
         ##                 COST FUNCTION                 ##   
         ###################################################
-        J += 100*dot(pbox - Box_ini , pbox - Box_ini)
-        J += 10*dot(qcd_k,qcd_k)
+        J += mpc.boxdist_w*dot(pbox - Box_ini , pbox - Box_ini)
+        J += mpc.joint_vel_w*dot(qcd_k,qcd_k)
 #        J += 0.001*dot(F_LR,F_LR)
 #        J += 0.001*dot(F_RR,F_RR)
 #        for indexT in range(0,nq):

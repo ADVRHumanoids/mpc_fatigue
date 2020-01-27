@@ -87,7 +87,7 @@ lbtorque = -Centauro_features.joint_torque_lim # [N/m]
 ubtorque = Centauro_features.joint_torque_lim # [N/m]
 #Temperature bounds
 lbtemp = np.full((1,nq),0.0)[0].tolist()
-ubtemp = np.full((1,nq),80.0)[0].tolist()
+ubtemp = np.full((1,nq),mpc.temperature_bound)[0].tolist()
 
 # COMPUTE INITIAL RELATIVE POSITION AND RELATIVE ERROR
 
@@ -113,15 +113,17 @@ L = mpc.Lbox
 #####################################################
 
 #Create the publisher that will send the OPTIMAL TRAJECTORY to the unroller node
-#pub = rospy.Publisher('to_unroller_topic', String , queue_size=10)
+
 pub = rospy.Publisher('to_unroller_topic', Float32MultiArray , queue_size=10000)
 
+mu = mpc.mu
 
 #INITIAL CONDITION FOR THE FIRST WARMSTART
-qc_0 = np.array(qc_0).reshape(1,nq)[0].tolist()
-F0 = np.array([0,0,m*9.81/2,0,0,m*9.81/2]).reshape(1,6)[0].tolist()
-sol0 = qc_0 + T_0 + qc_dot0 + F0
-sol0 = sol0 * N + qc_0 + T_0 
+qc_00 = np.array(qc_0).reshape(1,nq)[0].tolist()
+F0 = np.array([0, - m*9.81/(2*mu) ,m*9.81/2,0, m*9.81/(2*mu),m*9.81/2]).reshape(1,6)[0].tolist()
+sol0 = qc_00 + T_0 + qc_dot0 + F0
+sol0 = sol0 * N + qc_00 + T_0 
+
 #####################################################
 #              REAL-TIME OCP ALGORITHM              #
 #####################################################
@@ -131,7 +133,9 @@ ciclo = 0
 nf = 3 # force components
 n = 3*nq + 2*nf # element solution of each step  
 
-while True:
+
+soltot = []
+while s < 20:
     print(" ")
     print("##################################")
     print("#         Solving OCP "  + str(s) +"          #")
@@ -156,7 +160,7 @@ while True:
     J = 0
 
     #Box weight
-    Fdes = SX(9.81 * m)
+    Fdes = SX([0,0, - 9.81 * m])
     
 
     print('')
@@ -176,7 +180,7 @@ while True:
     ubTe.append(ubtemp)
     
     for k in range(N):
-        
+            
         R01 = ForwKinLA(qc_k,'rot')
         R02 = ForwKinRA(qc_k,'rot')
         pL = ForwKinLA(qc_k,'pos')
@@ -206,8 +210,8 @@ while True:
 
         # Gravitational force application point
         pbox = (pL + pR)/2
-              
-        #Force that the left end effector exerts to the object
+                 
+        #Force that the left end effector exerts to the object in GLOBAL FRAME
         moment_component = SX.zeros(3)
         F_name = 'FLR'+ str(k)
         F_LR = SX.sym(F_name,3) 
@@ -216,7 +220,7 @@ while True:
         ubw +=  np.full((1,3),np.inf)[0].tolist() 
         W_LA = vertcat(F_LR,moment_component)
         
-        #Force that the right end effector exerts to the object
+        #Force that the right end effector exerts to the object in GLOBAL FRAME
         F_name = 'FRR'+ str(k)
         F_RR = SX.sym(F_name,3) 
         w.append(F_RR)
@@ -227,14 +231,46 @@ while True:
         ###################################################  
         ##                 CONSTRAINTS                   ##   
         ###################################################
+    
+       
+        #Friction cone contact 1
+        A1 = np.matrix([ [0, -1,0],\
+                         [0, - mu, 1], \
+                         [0, - mu,-1], \
+                         [1, - mu, 0], \
+                         [-1, -mu, 0]])
+        # Then it is possible to compute the list of constraint
+        # Note that F_C1 is the local force that the enviorment excert on the robot.
+        # How do I compute it starting from the GLOBAL FORCE that the robot excert to the enviorment?
+        
+        #Firstly I change the force reference frame
+        F_C1robot_environment_local = mtimes(R01.T,F_LR)
+        #Then change the sign to obtaine the force that the enviorment excert on the robot
+        F_C1 = - F_C1robot_environment_local
+        #Then evaluate the constraint
+        C1 = mtimes(A1,F_C1)
 
-        #The two end effectors move along a line
-        g.append(vertcat(pL[1] - (BoxPos[1] + L/2), pL[2] - BoxPos[2]))
-        lbg += np.zeros(2).tolist()  
-        ubg += np.zeros(2).tolist()
+        #Friction cone contact 2
 
+        A2 = np.matrix([ [0 , 1 , 0],\
+                         [1 , mu , 0 ], \
+                         [-1 , mu , 0], \
+                         [0 , mu , 1 ], \
+                         [0 , mu ,-1 ]])
+                         
+        #Express the force in local frame
+        F_C2robot_environment_local = mtimes(R02.T,F_RR)
+        #Change sign in order to have the force that the enviorment excert to the robot
+        F_C2 = - F_C2robot_environment_local
+        C2 = mtimes(A2,F_C2)
+        
+        #Append the constraints
+        g.append(vertcat(C1,C2))
+        lbg += np.full((1,10),-np.inf)[0].tolist()  
+        ubg += np.zeros(10).tolist()
+        
         #Force static equilibrium
-        g.append(vertcat( F_LR[2] + F_RR[2] - Fdes, F_LR[0] + F_RR[0], F_LR[1] + F_RR[1]))
+        g.append(vertcat( F_LR + F_RR + Fdes))
         lbg += np.zeros(3).tolist()  
         ubg += np.zeros(3).tolist()
         
@@ -245,15 +281,18 @@ while True:
     
         # RELATIVE POSE CONSTRAINT
             
+        # RELATIVE POSE CONSTRAINT
+      
         #### RELATIVE POSITION ####
-        pos_1in2 = mtimes(R01.T,pR) - mtimes(R01.T,pL)
+        pos_2in1 = mtimes(R01.T,pR) - mtimes(R01.T,pL)
         #Add the constraint - The relative position should be the same
-        g.append(pos_1in2[0:3] - RelPosition[k][0:3]) 
+        g.append(pos_2in1[0:3] - RelPosition[k][0:3])  
         lbg += np.zeros(3).tolist()  
         ubg += np.zeros(3).tolist()
-        RelPosition.append(pos_1in2)
+        RelPosition.append(pos_2in1)
             
-        #### RELATIVE ORIENTATION BETWEEN END EFFECTORS ####
+            
+        #### RELATIVE ORIENTATION ####
         R_o = mtimes(R01,R02.T)
         #Compute the skew metrix of R_o
         R_skew = (R_o - R_o.T)/2
@@ -267,16 +306,14 @@ while True:
         lbg += np.zeros(3).tolist()  
         ubg += np.zeros(3).tolist()
 
-        Rref = np.matrix("0 0 -1; 0 1 0 ; 1 0 0")
-        gg = dot(R01 - Rref, R01 - Rref)
-        g.append(gg)
-        lbg += np.zeros(1).tolist()  
-        ubg += np.zeros(1).tolist()
+        #I have defined the force that the robot exerts on the ambient.
+        #The force that the ambient exerts on the robot is equal with a minus sign
+        #You need to take care of that while computing the inverse dynamics
        
         #Compute torque at each step
         JLA = Centauro_features.jac_la(qc_k)
         JRA = Centauro_features.jac_ra(qc_k)
-        tau = InvDyn(qc_k, qcd_k, qc_ddot0) + mtimes(JLA.T,W_LA) + mtimes(JRA.T,W_RA)
+        tau = InvDyn(qc_k, np.zeros(nq).tolist(), np.zeros(nq).tolist()) + mtimes(JLA.T,W_LA) + mtimes(JRA.T,W_RA)
 #            
         g.append(tau)
         lbg += [lbtorque]
@@ -284,15 +321,18 @@ while True:
         lbtq.append(lbtorque)
         ubtq.append(ubtorque)
                 
-        #Tref = np.full((1,nq),50.0)[0].tolist()      
+        Tref = np.full((1,nq),50.0)[0].tolist()      
         ###################################################   
         ##                 COST FUNCTION                 ##   
         ###################################################
         J += 1000*dot(pbox - Box_ini , pbox - Box_ini)
-        J += 100*dot(qcd_k,qcd_k)
-        J += 10*dot(F_LR,F_LR)
-        J += 10*dot(F_RR,F_RR)
-        #J += dot(T_k - Tref, T_k - Tref)
+        J += 10*dot(qcd_k,qcd_k)
+#        J += 0.001*dot(F_LR,F_LR)
+#        J += 0.001*dot(F_RR,F_RR)
+#        for indexT in range(0,nq):
+#            if T_0[indexT] > 0.8 * mpc.temperature_bound:
+#                J += 100000 * T_k[indexT]
+        #J += 0.001*dot(T_k - Tref, T_k - Tref)
         ###################################################   
         ##                 NEW VARIABLES                 ##   
         ###################################################
@@ -306,7 +346,7 @@ while True:
         # Second component is due to all the other losses function of the motor speed
         Ps = (qcd_k**2) / Rh
         Ploss = Pj + Ps
-        T_next = np.e**(-T/N/Ttheta) * T_k + Ploss * Rtheta * (1 - np.e**(-T/N/Ttheta))
+        T_next =  np.e**(-T/N/Ttheta) * T_k + Ploss * Rtheta * (1 - np.e**(-T/N/Ttheta))
         
         #New local state
         qname = 'qc' + str(k+1)
@@ -351,37 +391,40 @@ while True:
 
     # Create the nlp solver
     nlp = dict(f = J, g = g, x = w)
-
     if s >= 1:
-        opts = {"ipopt": {"tol": 0.001,"acceptable_tol": 0.001,"constr_viol_tol" : 0.001, "compl_inf_tol": 0.001}}
+        opts = {"ipopt": {"warm_start_init_point": "yes","tol": 0.001,"acceptable_tol": 0.001,"constr_viol_tol" : 0.001, "compl_inf_tol": 0.001}}
     else:
         opts = {"ipopt": {"warm_start_init_point": "yes","tol": 0.001,"acceptable_tol": 0.001,"constr_viol_tol" : 0.001, "compl_inf_tol": 0.001}}
 
-
-    # Allocate a solver
+    #Allocate a solver
     Solver = nlpsol("solver", mpc.MySolver, nlp, opts)
 
     if s >= 1:
-        r = Solver(x0 = sol, lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg)  
+        r = Solver(x0 = sol,lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg)  
     else:
-        r = Solver(lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg) 
+        r = Solver(x0 = sol0,lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg)  
         
-#    Solver = nlpsol("solver", "sqpmethod", nlp)#, opts)
-#    r = Solver(x0 = sol0 ,lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg) 
+#        Solver = nlpsol('Solver','sqpmethod',nlp)
+#        r = Solver(lbx = lbw, ubx = ubw, lbg = lbg, ubg = ubg)  
     sol = r['x'].full().flatten()
-
+    soltot.append(sol)
     #Initial condition for the next OCP
     qc_0 = sol[N*n:N*n+nq]
-    T_0 = sol[N*n+nq:N*n+2*nq] - 0.05 
-    qc_dot0 = sol[k*n+2*nq:k*n+3*nq]
+    T_0 = sol[N*n+nq:N*n+2*nq]
+    qc_dot0 = sol[k*n+2*nq:k*n+3*nq] 
+    
+    for t_index in range(nq):
+        if T_0[t_index] / mpc.temperature_bound > mpc.Tperc :
+            T_0[t_index] =  mpc.Tperc * T_0[t_index]        
+    
 
-    RelativePosition_0 = np.round(InitialRelativePosition(qc_0),3)
-    RelativeOrientation_0 = np.round(InitialRelativeOrientationError(qc_0),3)
+    RelativePosition_0 = np.round(RelativePosition(qc_0),3)
+    RelativeOrientation_0 = np.round(RelativeOrientationError(qc_0),3)
 
     qc_0 = np.round(qc_0,4).tolist()
     T_0 = np.round(T_0,4).tolist()
     qc_dot0 = np.round(qc_dot0,4).tolist()
-    
+   
     #Initialilize the relative position list
     RelPosition = [RelativePosition_0]
     
@@ -389,20 +432,15 @@ while True:
     print("#####################################")
     print("#   Estimated joint temperatures    #")
     print("#####################################")
-    print("")
     print(T_0)
-    print("")
     print("#####################################")
     print("#   End effector relative position  #")
     print("#####################################")
-    print("")
-    print(RelativePosition_0)
-    print("") 
+    print(RelativePosition_0) 
     print("#####################################")
     print("# End effector relative orientation #")
     print("#####################################")
     print(RelativeOrientation_0)
-    print("")
     
     data_to_send = Float32MultiArray()
     j = 0
@@ -410,19 +448,21 @@ while True:
     while (j < N):
         #Extract the optimal GLOBAL FORCE
         Ftot_global = sol[j*n+3*nq:j*n+n].tolist()
-        WrenchL_global = np.array(Ftot_global[0:3] + [0,0,0])
-        WrenchR_global = np.array(Ftot_global[3:6] + [0,0,0])
         #Transform FL  in LOCAL FORCE
         RfromWtoL = np.array(ForwKinLA(sol[j*n:j*n+nq],"rot").T)
-        HfromWtoL = vertcat(horzcat(RfromWtoL,np.zeros([3,3])),horzcat(np.zeros([3,3]),RfromWtoL))
-        F_tot_opt_local = [ mtimes(HfromWtoL,WrenchL_global)[0:3] ]
+        F_tot_opt_local = [ mtimes(RfromWtoL,Ftot_global[0:3]) ]
         
         #Transform FR  in LOCAL FORCE
-        RfromWtoR = np.array(ForwKinLA(sol[j*n:j*n+nq],"rot").T)
-        HfromWtoR = vertcat(horzcat(RfromWtoR,np.zeros([3,3])),horzcat(np.zeros([3,3]),RfromWtoR))
-        F_tot_opt_local.append( mtimes(HfromWtoL,WrenchL_global)[0:3])
+        RfromWtoR = np.array(ForwKinRA(sol[j*n:j*n+nq],"rot").T)
+        F_tot_opt_local.append( mtimes(RfromWtoR,Ftot_global[3:6]))
         
-        data_to_send.data =  np.array(sol[j*n:j*n+nq].tolist() + np.concatenate(np.concatenate(F_tot_opt_local).tolist()).tolist() )
+        W_LA = Ftot_global[0:3] + [0.0,0.0,0.0]
+        W_RA = Ftot_global[3:6] + [0.0,0.0,0.0]
+        J_LA = Centauro_features.jac_la(sol[j*n:j*n+nq])
+        J_RA = Centauro_features.jac_ra(sol[j*n:j*n+nq])
+        tau = InvDyn(sol[j*n:j*n+nq], np.zeros(nq).tolist(), np.zeros(nq).tolist()) + mtimes(J_LA.T,W_LA) + mtimes(J_RA.T,W_RA)
+        
+        data_to_send.data =  np.array(sol[j*n:j*n+nq].tolist() + np.concatenate(np.concatenate(F_tot_opt_local).tolist()).tolist() + np.concatenate(np.array(tau).tolist()).tolist() + sol[j*n+nq:j*n+2*nq].tolist())
         pub.publish(data_to_send)
         rate.sleep()
         #Move on the counter
@@ -432,4 +472,9 @@ while True:
     print("OCP has been solved, send trajectory to the unroller ...")
     #Upgrade s to let the warmstarting start and the new OCP
     s = s + 1
-       
+    
+soltot = np.concatenate(soltot).tolist()
+folder = "CsvSolution/"
+with open('/home/user/workspace/src/mpc_fatigue/Centauro_solutions/' + folder + '/sol_MPCwithfriction.csv', 'wb') as myfile:
+        wr = csv.writer(myfile)
+        wr.writerow(soltot)

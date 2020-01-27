@@ -150,19 +150,21 @@ def SaveCsv(folder,qc_opt,qcd_opt,F_opt_glob, F_opt_loc,tau_LR,tau_RR,lbt,ubt,bo
         wr = csv.writer(myfile)
         wr.writerow(ubtemp)
 
-def InvTalker(q1):
+def InvTalker(qinv):
         #Define publisher
         pub = rospy.Publisher('to_robot_topic', JointState, queue_size=10) # This can be seen in rostopic list
         joint = JointState()
         joint.header = Header()
         joint.header.stamp = rospy.Time.now()
         joint.name = Centauro_features.joint_name
-        joint.position =  []
+        joint.position =  [0.520149,0.320865,0.274669,-2.23604,0.0500815,-0.781461,-0.0567608,0.520149,-0.320865,-0.274669,-2.23604,-0.0500815,-0.781461,0.0567608]
         joint.velocity = []
         joint.effort = []
-        rate = rospy.Rate(mpc.initial_position_rate) # 10hz
+        rate = rospy.Rate(mpc.initial_position_rate) 
         i = 0.0
-
+        qhome = [0.520149,0.320865,0.274669,-2.23604,0.0500815,-0.781461,-0.0567608,0.520149,-0.320865,-0.274669,-2.23604,-0.0500815,-0.781461,0.0567608]
+        Discretization = 1000.0
+        
         #Marker properties
         marker = Marker()  
         marker.header.frame_id = "mass1_ee";
@@ -182,20 +184,24 @@ def InvTalker(q1):
         marker.color.r = 0.0
         marker.color.g = 1.0
         marker.color.b = 0.0
-        marker_pub = rospy.Publisher('MarkerTopic', Marker, queue_size=10)
+        marker_pub = rospy.Publisher('BoxMarkerTopic', Marker, queue_size=100)
         #marker_rate = rospy.Rate(1000) # 10hz
 
         while not rospy.is_shutdown():
             pub.publish(joint)
             marker_pub.publish(marker)
-            rate.sleep()
             joint.header.stamp = rospy.Time.now()
             marker.header.stamp = rospy.Time.now()
-            joint.position =  [i/1000*q1[0],i/1000*q1[1],i/1000*q1[2],i/1000*q1[3],i/1000*q1[4],i/1000*q1[5],i/1000*q1[6],i/1000*q1[7],i/1000*q1[8],i/1000*q1[9],i/1000*q1[10],i/1000*q1[11],i/1000*q1[12],i/1000*q1[13]]
             i+=1.0
-            if i == mpc.initial_position_rate:
+            q_actual = (np.array(qhome) * (Discretization - i)/Discretization) + np.concatenate(i/(Discretization) * np.array(qinv))
+            print(q_actual)
+            joint.position = q_actual
+            #joint.position = i/1000 * np.concatenate(i/(mpc.initial_position_rate) * np.array(qinv))
+            
+            if i == Discretization: # Discretize in 1000 steps
                 break
-
+            
+            rate.sleep()
 
 #From the desider initial condition, compute the inverse kinematic to determine
 def InvKin(BoxPos,L):
